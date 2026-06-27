@@ -1,10 +1,10 @@
 """
-Recommendation evaluation metrics (Task 5.2).
+推荐评估指标（任务5.2）。
 
-Supports:
-    - HR@K (Hit Rate)
-    - NDCG@K (Normalized Discounted Cumulative Gain)
-    - Recall@K
+支持：
+    - HR@K（命中率）
+    - NDCG@K（归一化折损累计增益）
+    - Recall@K（召回率）
 """
 
 import logging
@@ -20,17 +20,17 @@ def hr_at_k(
     ground_truth: List[Any],
     k: Optional[int] = None,
 ) -> float:
-    """Compute Hit Rate @ K.
+    """计算Hit Rate @ K。
 
-    HR@K = 1 if any ground truth item appears in top-K, else 0.
+    HR@K = 如果任何真实物品出现在top-K中则为1，否则为0。
 
     Args:
-        ranked_list: ranked list of item IDs (or candidate IDs).
-        ground_truth: list of relevant (ground truth) item IDs.
-        k: cutoff (default: len(ranked_list)).
+        ranked_list: 排序后的物品ID列表（或候选ID）。
+        ground_truth: 相关（真实）物品ID列表。
+        k: 截断值（默认：len(ranked_list)）。
 
     Returns:
-        1.0 if hit, else 0.0.
+        命中返回1.0，否则返回0.0。
     """
     if k is None:
         k = len(ranked_list)
@@ -48,19 +48,19 @@ def ndcg_at_k(
     ground_truth: List[Any],
     k: Optional[int] = None,
 ) -> float:
-    """Compute NDCG @ K.
+    """计算NDCG @ K。
 
-    NDCG@K = DCG@K / IDCG@K, where:
+    NDCG@K = DCG@K / IDCG@K，其中：
         DCG@K = sum(1 / log2(i + 1) for i where ranked_list[i] in ground_truth)
         IDCG@K = sum(1 / log2(i + 1) for i in range(min(K, |GT|)))
 
     Args:
-        ranked_list: ranked list of item IDs.
-        ground_truth: list of relevant item IDs.
-        k: cutoff (default: len(ranked_list)).
+        ranked_list: 排序后的物品ID列表。
+        ground_truth: 相关物品ID列表。
+        k: 截断值（默认：len(ranked_list)）。
 
     Returns:
-        NDCG value in [0, 1].
+        NDCG值，范围[0, 1]。
     """
     if k is None:
         k = len(ranked_list)
@@ -75,7 +75,7 @@ def ndcg_at_k(
         if ranked_list[i] in gt_set:
             dcg += 1.0 / np.log2(i + 2)
 
-    # Ideal DCG
+    # 理想DCG
     ideal_hits = min(k, len(ground_truth))
     idcg = sum(1.0 / np.log2(i + 2) for i in range(ideal_hits))
 
@@ -87,17 +87,17 @@ def recall_at_k(
     ground_truth: List[Any],
     k: Optional[int] = None,
 ) -> float:
-    """Compute Recall @ K.
+    """计算Recall @ K。
 
-    Recall@K = |top-K intersect GT| / |GT|
+    Recall@K = |top-K与真实集交集| / |真实集|
 
     Args:
-        ranked_list: ranked list of item IDs.
-        ground_truth: list of relevant item IDs.
-        k: cutoff (default: len(ranked_list)).
+        ranked_list: 排序后的物品ID列表。
+        ground_truth: 相关物品ID列表。
+        k: 截断值（默认：len(ranked_list)）。
 
     Returns:
-        Recall value in [0, 1].
+        Recall值，范围[0, 1]。
     """
     if k is None:
         k = len(ranked_list)
@@ -120,16 +120,16 @@ def mean_metric_at_ks(
     ks: List[int],
     metric_fn,
 ) -> Dict[int, float]:
-    """Compute mean metric @ K over all users.
+    """计算所有用户在K处的平均指标。
 
     Args:
-        scores_by_user: dict of user_id -> ranked list of item IDs.
-        ground_truth_by_user: dict of user_id -> list of relevant item IDs.
-        ks: list of K values to evaluate.
-        metric_fn: metric function (hr_at_k, ndcg_at_k, recall_at_k).
+        scores_by_user: 用户ID到排序后物品ID列表的字典。
+        ground_truth_by_user: 用户ID到相关物品ID列表的字典。
+        ks: 要评估的K值列表。
+        metric_fn: 指标函数（hr_at_k, ndcg_at_k, recall_at_k）。
 
     Returns:
-        Dict mapping K -> mean metric value.
+        映射K到平均指标值的字典。
     """
     results = {}
     for k in ks:
@@ -148,15 +148,15 @@ def evaluate_full_ranking(
     ground_truth_by_user: Dict[Any, List[Any]],
     ks: Optional[List[int]] = None,
 ) -> Dict[str, Dict[int, float]]:
-    """Full ranking evaluation with HR, NDCG, and Recall.
+    """使用HR、NDCG和Recall的完整排名评估。
 
     Args:
-        scores_by_user: dict of user_id -> ranked list of item IDs.
-        ground_truth_by_user: dict of user_id -> list of relevant item IDs.
-        ks: list of K values (default: [1, 5, 10, 20]).
+        scores_by_user: 用户ID到排序后物品ID列表的字典。
+        ground_truth_by_user: 用户ID到相关物品ID列表的字典。
+        ks: K值列表（默认：[1, 5, 10, 20]）。
 
     Returns:
-        Dict with keys "HR", "NDCG", "Recall", each mapping K -> value.
+        包含"HR"、"NDCG"、"Recall"键的字典，每个映射K到值。
     """
     if ks is None:
         ks = [1, 5, 10, 20]

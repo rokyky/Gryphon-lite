@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Train the Gryphon-style item-level scorer (Task 3.4).
+训练Gryphon风格的物品级评分器（任务3.4）。
 
-Training data:
-    - Positives: next-item from user history
-    - Hard negatives: generated SID candidates that are NOT the target
-    - Random negatives: random items from catalog
+训练数据：
+    - 正样本：用户历史中的下一个物品
+    - 难负样本：生成的SID候选中不是目标的物品
+    - 随机负样本：目录中的随机物品
 
-Loss: binary cross-entropy or pairwise ranking loss.
+损失：二元交叉熵或成对排名损失。
 
-Usage:
+用法：
     python scripts/train_item_scorer.py \\
         --train_path data/train.csv \\
         --index_path data/indices.json \\
@@ -32,6 +32,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
+# 将项目根目录添加到路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.item_scorer import ItemScorerConfig, create_item_scorer
@@ -43,13 +44,13 @@ logger = logging.getLogger(__name__)
 
 
 class ItemScorerTrainDataset(Dataset):
-    """Dataset for item scorer training.
+    """用于物品评分器训练的数据集。
 
-    Each sample contains:
-        - user_history_sids: SID sequence for user history
-        - positive_item_id: the next item the user interacted with
-        - hard_negative_item_ids: generated candidates that are NOT the target
-        - random_negative_item_ids: random items from catalog
+    每个样本包含：
+        - user_history_sids: 用户历史的SID序列
+        - positive_item_id: 用户交互的下一个物品
+        - hard_negative_item_ids: 不是目标的生成候选项
+        - random_negative_item_ids: 目录中的随机物品
     """
 
     def __init__(
@@ -66,7 +67,7 @@ class ItemScorerTrainDataset(Dataset):
         self.num_sid_tokens = num_sid_tokens
         self.min_seq_len = min_seq_len
 
-        # Load index
+        # 加载索引
         with open(index_path, "r") as f:
             self.index: Dict[str, List[int]] = json.load(f)
 
@@ -76,11 +77,11 @@ class ItemScorerTrainDataset(Dataset):
 
         self.all_item_ids = list(self.item_to_sid.keys())
 
-        # Load sequences
+        # 加载序列
         import pandas as pd
         self.data = pd.read_csv(data_path)
 
-        # Build samples
+        # 构建样本
         self.samples: List[Dict[str, Any]] = []
         self._build_samples()
 
@@ -109,11 +110,11 @@ class ItemScorerTrainDataset(Dataset):
             if len(history_sids) < self.min_seq_len:
                 continue
 
-            # Truncate history
+            # 截断历史
             if len(history_sids) > self.max_history_len:
                 history_sids = history_sids[-self.max_history_len:]
 
-            # Random negatives (sample items not in history)
+            # 随机负样本（从历史中采样不在其中的物品）
             history_set = set(str(h) for h in history_item_ids)
             valid_negatives = [
                 iid for iid in self.all_item_ids
@@ -140,9 +141,9 @@ class ItemScorerTrainDataset(Dataset):
 
 
 def collate_scorer_samples(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Collate batch of scorer samples.
+    """批量整理评分器样本。
 
-    Returns collated data with padded negative lists.
+    返回带有填充负样本列表的整理数据。
     """
     max_negatives = max(len(s["random_negative_ids"]) for s in batch)
 
@@ -157,7 +158,7 @@ def collate_scorer_samples(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
         collated["pos_item_ids"].append(s["positive_item_id"])
 
         negs = s["random_negative_ids"]
-        # Pad negatives
+        # 填充负样本
         while len(negs) < max_negatives:
             negs.append(negs[0] if negs else s["positive_item_id"])
         collated["neg_item_ids"].append(negs)
@@ -170,7 +171,7 @@ def extract_sid_embedding(
     model: SIDGenerator,
     device: torch.device,
 ) -> torch.Tensor:
-    """Extract SID embedding from generator token embeddings."""
+    """从生成器Token嵌入中提取SID嵌入。"""
     sid_tensor = torch.tensor([sid], dtype=torch.long, device=device)
     emb = model.token_embedding(sid_tensor)  # (1, T, D)
     return emb.mean(dim=1)  # (1, D)
@@ -185,7 +186,7 @@ def train_epoch(
     item_to_sid: Optional[Dict[str, Tuple[int, ...]]] = None,
     user_dim: int = 128,
 ) -> float:
-    """Train for one epoch using pairwise ranking loss."""
+    """使用成对排名损失训练一个epoch。"""
     scorer.train()
     total_loss = 0.0
     num_batches = 0
@@ -201,7 +202,7 @@ def train_epoch(
             pos_id = batch["pos_item_ids"][i]
             neg_ids = batch["neg_item_ids"][i]
 
-            # Pad history
+            # 填充历史
             pad_len = 50 - len(history_sids)
             if pad_len > 0:
                 pad_sid = tuple([0] * 3)
@@ -211,7 +212,7 @@ def train_epoch(
 
             hist_tensor = torch.tensor([history_sids_padded], dtype=torch.long, device=device)
 
-            # Get user embedding from SID generator
+            # 从SID生成器获取用户嵌入
             with torch.no_grad():
                 if sid_generator is not None:
                     user_emb = sid_generator.token_embedding(
@@ -220,7 +221,7 @@ def train_epoch(
                 else:
                     user_emb = torch.zeros(1, user_dim, device=device)
 
-            # Positive score
+            # 正样本分数
             pos_sid = item_to_sid.get(pos_id, (0,) * 3)
             pos_sid_emb = extract_sid_embedding(pos_sid, sid_generator, device) if sid_generator else None
 
@@ -231,7 +232,7 @@ def train_epoch(
                 sid_embeddings=pos_sid_emb.unsqueeze(1) if pos_sid_emb is not None else None,
             )
 
-            # Negative scores (mean over negatives)
+            # 负样本分数（对负样本取均值）
             neg_scores_list = []
             for neg_id in neg_ids:
                 neg_sid = item_to_sid.get(neg_id, (0,) * 3)
@@ -247,8 +248,8 @@ def train_epoch(
 
             neg_scores = torch.stack(neg_scores_list)
 
-            # BPR pairwise loss: -log(sigmoid(pos - neg))
-            # Average over negatives
+            # BPR成对损失：-log(sigmoid(pos - neg))
+            # 对负样本取平均
             pairwise_loss = -F.logsigmoid(pos_score - neg_scores).mean()
 
             batch_loss += pairwise_loss
@@ -266,7 +267,7 @@ def train_epoch(
 
 @torch.no_grad()
 def validate(scorer, dataloader, device, sid_generator=None, item_to_sid=None):
-    """Validation: compute mean score margin (pos - neg)."""
+    """验证：计算平均分数差值（正样本 - 负样本）。"""
     scorer.eval()
     margins = []
     num_samples = 0
@@ -300,7 +301,7 @@ def validate(scorer, dataloader, device, sid_generator=None, item_to_sid=None):
             )
 
             neg_scores = []
-            for neg_id in neg_ids[:10]:  # subsample for speed
+            for neg_id in neg_ids[:10]:  # 为加快速度进行子采样
                 neg_sid = item_to_sid.get(neg_id, (0,) * 3)
                 neg_sid_emb = extract_sid_embedding(neg_sid, sid_generator, device) if sid_generator else None
                 neg_id_tensor = torch.tensor([[hash(neg_id) % 10000]], device=device)
@@ -320,12 +321,12 @@ def validate(scorer, dataloader, device, sid_generator=None, item_to_sid=None):
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Train item-level scorer")
+    parser = argparse.ArgumentParser(description="训练物品级评分器")
     parser.add_argument("--train_path", type=str, required=True)
     parser.add_argument("--valid_path", type=str, default=None)
     parser.add_argument("--index_path", type=str, required=True)
     parser.add_argument("--sid_generator_ckpt", type=str, default=None,
-                        help="Pretrained SID generator checkpoint")
+                        help="预训练的SID生成器检查点")
     parser.add_argument("--sid_generator_config", type=str, default=None)
 
     parser.add_argument("--scorer_type", type=str, default="mlp", choices=["dotproduct", "mlp"])
@@ -363,13 +364,13 @@ def main():
 
     os.makedirs(args.output_dir, exist_ok=True)
 
-    # Load index
+    # 加载索引
     with open(args.index_path, "r") as f:
         index = json.load(f)
     item_to_sid = {iid: tuple(int(s) for s in sid_list) for iid, sid_list in index.items()}
     num_items = len(item_to_sid)
 
-    # Load SID generator (optional, for embeddings)
+    # 加载SID生成器（可选，用于嵌入）
     sid_generator = None
     if args.sid_generator_ckpt:
         logger.info(f"Loading SID generator from {args.sid_generator_ckpt}")
@@ -379,7 +380,7 @@ def main():
         sid_generator.load_state_dict(ckpt["model_state_dict"])
         sid_generator.eval()
 
-    # Build datasets
+    # 构建数据集
     train_dataset = ItemScorerTrainDataset(
         args.train_path, args.index_path,
         num_random_negatives=args.num_random_negatives,
@@ -406,7 +407,7 @@ def main():
     valid_loader = DataLoader(valid_dataset, batch_size=args.batch_size, shuffle=False,
                               num_workers=0, collate_fn=collate)
 
-    # Create scorer
+    # 创建评分器
     scorer_config = ItemScorerConfig(
         scorer_type=args.scorer_type,
         user_dim=args.user_dim,

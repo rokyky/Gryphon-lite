@@ -1,12 +1,12 @@
 """
-Comprehensive evaluation report (Task 5.3).
+全面的评估报告（任务5.3）。
 
-Sections:
-    - Calibration: compare beam likelihood vs empirical relevance
-    - Collision: SID collision statistics and impact
-    - Diversity: beam item diversity
-    - Long-tail: head vs tail item performance
-    - Latency: decoding time, rerank time
+章节：
+    - Calibration（校准）：比较beam似然度与经验相关性
+    - Collision（冲突）：SID冲突统计及影响
+    - Diversity（多样性）：Beam物品多样性
+    - Long-tail（长尾）：头部与尾部物品的表现
+    - Latency（延迟）：解码时间、重排序时间
 """
 
 import logging
@@ -27,16 +27,15 @@ logger = logging.getLogger(__name__)
 
 
 class EvalReport:
-    """Build a comprehensive evaluation report.
+    """构建全面的评估报告。
 
-    Collects metrics across multiple dimensions and outputs as a dict
-    (for JSON export) or formatted string.
+    在多个维度上收集指标，并以字典形式（用于JSON导出）或格式化字符串输出。
     """
 
     def __init__(self):
         self.results: Dict[str, Any] = {}
 
-    # ----- Calibration (Task 5.3) -----
+    # ----- 校准（任务5.3） -----
 
     def compute_calibration(
         self,
@@ -44,15 +43,15 @@ class EvalReport:
         scorer_scores: List[float],
         relevance_labels: List[int],
     ) -> Dict[str, Any]:
-        """Compare beam likelihood vs empirical relevance.
+        """比较beam似然度与经验相关性。
 
         Args:
-            beam_scores: beam likelihood scores for each candidate.
-            scorer_scores: item-level scorer scores.
-            relevance_labels: binary relevance (1 = relevant, 0 = not).
+            beam_scores: 每个候选的beam似然分数。
+            scorer_scores: 物品级评分器的分数。
+            relevance_labels: 二元相关性（1=相关，0=不相关）。
 
         Returns:
-            Dict with calibration metrics.
+            包含校准指标的字典。
         """
         if not beam_scores or len(beam_scores) != len(scorer_scores):
             return {}
@@ -60,16 +59,16 @@ class EvalReport:
         beam_order = np.argsort(-np.array(beam_scores))
         scorer_order = np.argsort(-np.array(scorer_scores))
 
-        # Spearman correlation between beam and scorer rankings
+        # Spearman相关性
         from scipy.stats import spearmanr
         corr, p_value = spearmanr(beam_order, scorer_order)
 
-        # Ranking gap: how many positions does the best item shift
+        # 排名差距：最佳物品移动了多少个位置
         best_idx = int(np.argmax(relevance_labels)) if max(relevance_labels) > 0 else 0
         beam_rank_of_best = int(np.where(beam_order == best_idx)[0][0]) if best_idx < len(beam_order) else 0
         scorer_rank_of_best = int(np.where(scorer_order == best_idx)[0][0]) if best_idx < len(scorer_order) else 0
 
-        # Score correlation (Pearson)
+        # 分数相关性（Pearson）
         from scipy.stats import pearsonr
         pearson_r, p_pearson = pearsonr(beam_scores, scorer_scores)
 
@@ -83,17 +82,17 @@ class EvalReport:
             "ranking_gap": beam_rank_of_best - scorer_rank_of_best,
         }
 
-    # ----- Collision (Task 5.3) -----
+    # ----- 冲突（任务5.3） -----
 
     def compute_collision_stats(
         self,
         sid_to_items: Dict[Tuple[int, ...], List[Any]],
         scorer_can_separate: Optional[Dict[str, bool]] = None,
     ) -> Dict[str, Any]:
-        """Compute collision statistics and separation impact."""
+        """计算冲突统计信息及分离影响。"""
         stats = collision_group_stats(sid_to_items)
 
-        # How many items are in collision groups?
+        # 有多少物品在冲突组中？
         total_items = sum(len(items) for items in sid_to_items.values())
         colliding_items = sum(len(items) for items in sid_to_items.values() if len(items) > 1)
         collision_item_rate = colliding_items / max(total_items, 1)
@@ -102,7 +101,7 @@ class EvalReport:
         stats["colliding_items"] = colliding_items
         stats["collision_item_rate"] = collision_item_rate
 
-        # Scorer separation impact
+        # 评分器分离影响
         if scorer_can_separate:
             sep_counts = Counter(scorer_can_separate.values())
             stats["scorer_separation"] = {
@@ -113,13 +112,13 @@ class EvalReport:
 
         return stats
 
-    # ----- Diversity (Task 5.3) -----
+    # ----- 多样性（任务5.3） -----
 
     def compute_diversity(
         self,
         generated_items_by_user: Dict[Any, List[Any]],
     ) -> Dict[str, float]:
-        """Compute beam diversity metrics across all users."""
+        """计算所有用户的Beam多样性指标。"""
         diversities = []
         for user_id, items in generated_items_by_user.items():
             diversities.append(beam_diversity(items))
@@ -130,7 +129,7 @@ class EvalReport:
             "max_beam_diversity": float(np.max(diversities)) if diversities else 0.0,
         }
 
-    # ----- Long-tail (Task 5.3) -----
+    # ----- 长尾（任务5.3） -----
 
     def compute_long_tail(
         self,
@@ -139,18 +138,18 @@ class EvalReport:
         item_popularity: Dict[Any, int],
         tail_threshold: int = 20,
     ) -> Dict[str, Any]:
-        """Compute head vs tail item performance.
+        """计算头部与尾部物品的表现。
 
-        Items with popularity <= tail_threshold percentile are "tail".
+        流行度 <= tail_threshold百分位的物品被视为"尾部"。
 
         Args:
-            ranked_lists_by_user: dict of user -> ranked item list.
-            ground_truth_by_user: dict of user -> ground truth items.
-            item_popularity: dict of item_id -> interaction count.
-            tail_threshold: percentile threshold for tail definition.
+            ranked_lists_by_user: 用户到排序物品列表的字典。
+            ground_truth_by_user: 用户到真实物品的字典。
+            item_popularity: 物品ID到交互次数的字典。
+            tail_threshold: 尾部定义的百分位阈值。
 
         Returns:
-            Dict with head and tail HR/NDCG.
+            包含头部和尾部HR/NDCG的字典。
         """
         if not item_popularity:
             return {}
@@ -173,9 +172,9 @@ class EvalReport:
             if not gt:
                 continue
 
-            target = gt[0]  # single target
+            target = gt[0]  # 单个目标
 
-            # Head
+            # 头部
             if target in head_items:
                 head_total += 1
                 hit = hr_at_k(ranked_list, [target], k=10)
@@ -183,7 +182,7 @@ class EvalReport:
                 if hit:
                     head_ndcg_sum += ndcg_at_k(ranked_list, [target], k=10)
 
-            # Tail
+            # 尾部
             if target in tail_items:
                 tail_total += 1
                 hit = hr_at_k(ranked_list, [target], k=10)
@@ -208,7 +207,7 @@ class EvalReport:
             },
         }
 
-    # ----- Latency (Task 5.3) -----
+    # ----- 延迟（任务5.3） -----
 
     @staticmethod
     def measure_latency(
@@ -216,26 +215,26 @@ class EvalReport:
         rerank_fn=None,
         num_runs: int = 10,
     ) -> Dict[str, float]:
-        """Measure decoding and reranking latency.
+        """测量解码和重排序延迟。
 
         Args:
-            decode_fn: callable that runs decoding and returns results.
-            rerank_fn: optional callable that runs reranking.
-            num_runs: number of warm-up + measured runs.
+            decode_fn: 运行解码并返回结果的可调用对象。
+            rerank_fn: 可选，运行重排序的可调用对象。
+            num_runs: 预热+测量运行的次数。
 
         Returns:
-            Dict with latency stats in milliseconds.
+            以毫秒为单位的延迟统计字典。
         """
         latencies = {"decode": [], "rerank": []}
 
         for _ in range(num_runs):
-            # Decoding
+            # 解码
             start = time.perf_counter()
             decode_fn()
             elapsed = (time.perf_counter() - start) * 1000  # ms
             latencies["decode"].append(elapsed)
 
-            # Reranking
+            # 重排序
             if rerank_fn:
                 start = time.perf_counter()
                 rerank_fn()
@@ -265,7 +264,7 @@ class EvalReport:
         ranking_comparison: Optional[Dict[str, Any]] = None,
         generation_metrics: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Combine all sections into a single report."""
+        """将所有章节合并为单个报告。"""
         report = {}
 
         if calibration:
@@ -286,33 +285,33 @@ class EvalReport:
         self.results = report
         return report
 
-# ===== Standalone Report Classes (Task 5.3) =====
+# ===== 独立的报告类（任务5.3） =====
 
 
 class CalibrationReport:
-    """Calibration report: compare beam likelihood vs item-level scorer rankings.
+    """校准报告：比较beam似然度与物品级评分器排名。
 
-    Measures how well beam likelihood scores correlate with item relevance.
+    衡量beam似然分数与物品相关性的相关程度。
     """
 
     def __init__(self):
         self.report = EvalReport()
 
     def compute(self, beam_scores, scorer_scores, relevance_labels):
-        """Compute calibration metrics.
+        """计算校准指标。
 
         Args:
-            beam_scores: list of beam likelihood scores.
-            scorer_scores: list of scorer relevance scores.
-            relevance_labels: binary relevance (1=relevant, 0=not).
+            beam_scores: beam似然分数列表。
+            scorer_scores: 评分器相关性分数列表。
+            relevance_labels: 二元相关性（1=相关，0=不相关）。
 
         Returns:
-            Dict with calibration metrics.
+            包含校准指标的字典。
         """
         return self.report.compute_calibration(beam_scores, scorer_scores, relevance_labels)
 
     def to_string(self, metrics):
-        """Format calibration metrics as a string."""
+        """将校准指标格式化为字符串。"""
         lines = ["=== Calibration Report ==="]
         if not metrics:
             lines.append("  No calibration data.")
@@ -326,25 +325,25 @@ class CalibrationReport:
 
 
 class CollisionReport:
-    """Collision report: SID collision statistics and scorer separation impact."""
+    """冲突报告：SID冲突统计信息和评分器分离影响。"""
 
     def __init__(self):
         self.report = EvalReport()
 
     def compute(self, sid_to_items, scorer_can_separate=None):
-        """Compute collision statistics.
+        """计算冲突统计信息。
 
         Args:
-            sid_to_items: mapping from SID tuple to list of item IDs.
-            scorer_can_separate: optional dict of SID -> whether scorer separates items.
+            sid_to_items: 从SID元组到物品ID列表的映射。
+            scorer_can_separate: 可选的SID到评分器是否能区分物品的字典。
 
         Returns:
-            Dict with collision metrics.
+            包含冲突指标的字典。
         """
         return self.report.compute_collision_stats(sid_to_items, scorer_can_separate)
 
     def to_string(self, metrics):
-        """Format collision metrics as a string."""
+        """将冲突指标格式化为字符串。"""
         lines = ["=== Collision Report ==="]
         if not metrics:
             lines.append("  No collision data.")
@@ -365,24 +364,24 @@ class CollisionReport:
 
 
 class DiversityReport:
-    """Diversity report: beam diversity statistics across users."""
+    """多样性报告：所有用户的Beam多样性统计。"""
 
     def __init__(self):
         self.report = EvalReport()
 
     def compute(self, generated_items_by_user):
-        """Compute diversity metrics.
+        """计算多样性指标。
 
         Args:
-            generated_items_by_user: dict of user -> list of generated item IDs.
+            generated_items_by_user: 用户到生成物品ID列表的字典。
 
         Returns:
-            Dict with diversity metrics.
+            包含多样性指标的字典。
         """
         return self.report.compute_diversity(generated_items_by_user)
 
     def to_string(self, metrics):
-        """Format diversity metrics as a string."""
+        """将多样性指标格式化为字符串。"""
         lines = ["=== Diversity Report ==="]
         if not metrics:
             lines.append("  No diversity data.")
@@ -393,25 +392,25 @@ class DiversityReport:
 
 
 class LatencyReport:
-    """Latency report: decoding and reranking timing measurements."""
+    """延迟报告：解码和重排序的时间测量。"""
 
     @staticmethod
     def measure(decode_fn, rerank_fn=None, num_runs=10):
-        """Measure latency.
+        """测量延迟。
 
         Args:
-            decode_fn: callable for decoding.
-            rerank_fn: optional callable for reranking.
-            num_runs: number of measurement runs.
+            decode_fn: 用于解码的可调用对象。
+            rerank_fn: 可选，用于重排序的可调用对象。
+            num_runs: 测量运行次数。
 
         Returns:
-            Dict with latency metrics in milliseconds.
+            以毫秒为单位的延迟指标字典。
         """
         return EvalReport.measure_latency(decode_fn, rerank_fn, num_runs)
 
     @staticmethod
     def to_string(metrics):
-        """Format latency metrics as a string."""
+        """将延迟指标格式化为字符串。"""
         lines = ["=== Latency Report ==="]
         if not metrics:
             lines.append("  No latency data.")
@@ -431,20 +430,20 @@ def full_report(
     generation_metrics=None,
     output_path=None,
 ):
-    """Generate a full evaluation report combining all sections.
+    """生成结合所有章节的完整评估报告。
 
     Args:
-        calibration_metrics: dict from CalibrationReport.compute().
-        collision_metrics: dict from CollisionReport.compute().
-        diversity_metrics: dict from DiversityReport.compute().
-        long_tail_metrics: dict from EvalReport.compute_long_tail().
-        latency_metrics: dict from LatencyReport.measure().
-        ranking_comparison: dict from ranking comparison.
-        generation_metrics: dict from generation quality evaluation.
-        output_path: optional path to save JSON report.
+        calibration_metrics: 来自CalibrationReport.compute()的字典。
+        collision_metrics: 来自CollisionReport.compute()的字典。
+        diversity_metrics: 来自DiversityReport.compute()的字典。
+        long_tail_metrics: 来自EvalReport.compute_long_tail()的字典。
+        latency_metrics: 来自LatencyReport.measure()的字典。
+        ranking_comparison: 来自排名比较的字典。
+        generation_metrics: 来自生成质量评估的字典。
+        output_path: 可选的JSON报告保存路径。
 
     Returns:
-        Tuple of (report_dict, formatted_string).
+        (report_dict, formatted_string)元组。
     """
     report = EvalReport()
     report.generate_report(
@@ -457,7 +456,7 @@ def full_report(
         generation_metrics=generation_metrics,
     )
 
-    # Build formatted string
+    # 构建格式化字符串
     lines = []
     lines.append("=" * 60)
     lines.append("Gryphon-lite Full Evaluation Report")

@@ -1,8 +1,8 @@
 """
-SID-to-item candidate grounding (Task 3.1).
+SID到物品候选的Grounding（任务3.1）。
 
-Given generated SID tokens, looks up candidate items, handles collisions,
-and ranks within collision groups by heuristic (popularity, recency).
+给定生成的SID Token，查找候选物品，处理冲突，
+并在冲突组内通过启发式方法排序（流行度、新近度）。
 """
 
 import logging
@@ -13,16 +13,16 @@ logger = logging.getLogger(__name__)
 
 
 class ItemGrounding:
-    """Ground generated SID tokens to concrete item candidates.
+    """将生成的SID Token映射到具体的物品候选项。
 
-    Handles SID collisions (multiple items mapping to the same SID) by
-    ranking items within each collision group using heuristic scores.
+    通过使用启发式分数对每个冲突组内的物品进行排名来处理SID冲突
+    （多个物品映射到同一个SID）。
 
     Args:
-        sid_to_items: mapping from SID tuple to list of item IDs.
-        item_to_sid: mapping from item ID to SID tuple.
-        popularity_scores: optional dict of item_id -> popularity score.
-        recency_scores: optional dict of item_id -> recency score.
+        sid_to_items: 从SID元组到物品ID列表的映射。
+        item_to_sid: 从物品ID到SID元组的映射。
+        popularity_scores: 可选的物品ID到流行度分数的字典。
+        recency_scores: 可选的物品ID到新近度分数的字典。
     """
 
     def __init__(
@@ -41,12 +41,12 @@ class ItemGrounding:
         self,
         sid: Tuple[int, ...],
     ) -> Tuple[List[Any], Dict[str, Any]]:
-        """Look up candidate items for a generated SID.
+        """查找生成的SID对应的候选物品。
 
-        Returns:
+        返回：
             (candidate_items, metadata):
-                candidate_items: list of item IDs that map to this SID.
-                metadata: dict with collision info.
+                candidate_items: 映射到此SID的物品ID列表。
+                metadata: 包含冲突信息的字典。
         """
         items = self.sid_to_items.get(sid, [])
 
@@ -59,7 +59,7 @@ class ItemGrounding:
         if len(items) <= 1:
             return items, metadata
 
-        # Multiple items share this SID; rank by heuristic
+        # 多个物品共享此SID；按启发式排序
         scored = []
         for item_id in items:
             score = self._heuristic_score(item_id)
@@ -78,16 +78,16 @@ class ItemGrounding:
         self,
         sids: List[Tuple[int, ...]],
     ) -> Tuple[List[Tuple[Any, float]], Dict[str, Any]]:
-        """Ground multiple generated SIDs to ranked candidate items.
+        """将多个生成的SID映射到排序后的候选物品。
 
         Args:
-            sids: list of generated SID tuples.
+            sids: 生成的SID元组列表。
 
         Returns:
             (ranked_candidates, metadata):
-                ranked_candidates: list of (item_id, grounding_score) pairs,
-                                   sorted by score descending.
-                metadata: dict with grounding stats.
+                ranked_candidates: (item_id, grounding_score)对列表，
+                                   按分数降序排列。
+                metadata: 包含grounding统计信息的字典。
         """
         all_candidates: List[Tuple[Any, float]] = []
         seen_items: set = set()
@@ -116,12 +116,12 @@ class ItemGrounding:
         return all_candidates, grounding_metadata
 
     def _heuristic_score(self, item_id: Any) -> float:
-        """Compute a heuristic ranking score for an item.
+        """计算物品的启发式排名分数。
 
-        Combines popularity, recency, and a small default score.
-        All components are normalized to roughly [0, 1].
+        结合流行度、新近度和一个小的默认分数。
+        所有分量大致归一化到[0, 1]。
         """
-        score = 1.0  # default
+        score = 1.0  # 默认
 
         if item_id in self.popularity_scores:
             score += self.popularity_scores[item_id]
@@ -137,18 +137,17 @@ class ItemGrounding:
         user_embedding: Optional[Any] = None,
         item_embeddings: Optional[Dict[Any, Any]] = None,
     ) -> List[Tuple[Any, float]]:
-        """Ground SIDs using item embeddings for better collision resolution.
+        """使用物品嵌入进行更好的冲突解决的SID Grounding。
 
-        If a user embedding is available, score items by similarity to user
-        within each collision group.
+        如果用户嵌入可用，则在每个冲突组内通过用户相似度对物品评分。
 
         Args:
-            sids: list of generated SID tuples.
-            user_embedding: optional user representation vector.
-            item_embeddings: optional dict of item_id -> embedding vector.
+            sids: 生成的SID元组列表。
+            user_embedding: 可选的用户表示向量。
+            item_embeddings: 可选的物品ID到嵌入向量的字典。
 
         Returns:
-            List of (item_id, score) sorted by score descending.
+            按分数降序排列的(item_id, score)列表。
         """
         import numpy as np
 
@@ -162,7 +161,7 @@ class ItemGrounding:
                     seen_items.add(item_id)
 
                     score = 1.0
-                    # Use embedding similarity if available
+                    # 如果可用，使用嵌入相似度
                     if (
                         user_embedding is not None
                         and item_embeddings is not None
@@ -174,7 +173,7 @@ class ItemGrounding:
                             sim = float(np.dot(ue, ie) / (np.linalg.norm(ue) * np.linalg.norm(ie)))
                             score += max(0.0, sim)
 
-                    # Add popularity boost
+                    # 添加流行度加分
                     if item_id in self.popularity_scores:
                         score += self.popularity_scores[item_id]
 

@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
-Latte ablation: compare vanilla SID generator vs latent-token SID generator (Task 4.3).
+Latte消融实验：比较vanilla SID生成器与潜在Token SID生成器（任务4.3）。
 
-Measures:
+测量：
     - HR@10 / HR@20
     - NDCG@10 / NDCG@20
-    - Collision separation
-    - Valid item rate
-    - Decoding latency
+    - 冲突分离
+    - 有效物品率
+    - 解码延迟
 
-Prints an ablation comparison table.
+打印消融比较表。
 
-Usage:
+用法：
     python scripts/run_latte_ablation.py \
         --test_path data/test.csv \
         --index_path data/indices.json \
@@ -33,6 +33,7 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
+# 将项目根目录添加到路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.eval_metrics import hr_at_k, ndcg_at_k
@@ -45,7 +46,7 @@ logger = logging.getLogger(__name__)
 
 
 def load_test_data(test_path, index_path, max_history_len=50, min_seq_len=1):
-    """Load test sequences with SID mappings."""
+    """加载带有SID映射的测试序列。"""
     import pandas as pd
     with open(index_path, 'r') as f:
         index = json.load(f)
@@ -85,12 +86,12 @@ def load_test_data(test_path, index_path, max_history_len=50, min_seq_len=1):
 
 def build_model(variant, ckpt_path, device, num_sid_tokens=3, vocab_per_token=256,
                 hidden_dim=128, num_layers=3, num_heads=4, latent_token_count=0):
-    """Build a SID generator model variant.
+    """构建SID生成器模型变体。
 
     Args:
-        variant: 'vanilla' or 'latent'
-        ckpt_path: path to checkpoint (shared weights for fair comparison).
-        latent_token_count: number of latent tokens (0 for vanilla, 4 for latent).
+        variant: 'vanilla'或'latent'
+        ckpt_path: 检查点路径（公平比较共享权重）。
+        latent_token_count: 潜在Token数量（vanilla为0，latent为4）。
     """
     use_latent = variant == 'latent' and latent_token_count > 0
     ltc = latent_token_count if use_latent else 0
@@ -108,11 +109,11 @@ def build_model(variant, ckpt_path, device, num_sid_tokens=3, vocab_per_token=25
 
     model = SIDGenerator(config).to(device)
 
-    # Load checkpoint weights (shared between variants)
+    # 加载检查点权重（变体之间共享）
     if os.path.exists(ckpt_path):
         ckpt = torch.load(ckpt_path, map_location='cpu')
         state_dict = ckpt['model_state_dict']
-        # Filter to matching keys (ignore latent tokens if loading vanilla weights)
+        # 过滤到匹配的键（如果加载vanilla权重则忽略潜在Token）
         model_dict = model.state_dict()
         filtered = {k: v for k, v in state_dict.items() if k in model_dict
                     and model_dict[k].shape == v.shape}
@@ -133,10 +134,10 @@ def build_model(variant, ckpt_path, device, num_sid_tokens=3, vocab_per_token=25
 @torch.no_grad()
 def evaluate_variant(model, test_samples, sid_to_items, trie, beam_width,
                      num_samples, device, measure_latency=True):
-    """Evaluate a model variant on test samples.
+    """评估测试样本上的模型变体。
 
-    Returns:
-        dict of metrics.
+    返回：
+        指标的字典。
     """
     beam_cfg = TrieBeamSearchConfig(beam_width=beam_width)
     decoder = TrieConstrainedBeamSearch(trie, beam_cfg)
@@ -161,13 +162,13 @@ def evaluate_variant(model, test_samples, sid_to_items, trie, beam_width,
         hist_tensor = torch.tensor([[history_sids]], dtype=torch.long, device=device)
         hist = hist_tensor.reshape(1, H, num_sid_tokens)
 
-        # Measure latency
+        # 测量延迟
         start = time.perf_counter()
         sequences, scores = decoder.search(hist, model, num_return=beam_width)
         elapsed = (time.perf_counter() - start) * 1000  # ms
         latencies.append(elapsed)
 
-        # Ground SIDs to items
+        # 将SID映射到物品
         beam_items = []
         seen = set()
         for sid in sequences[0]:
@@ -180,14 +181,14 @@ def evaluate_variant(model, test_samples, sid_to_items, trie, beam_width,
         generated_sids_list.extend(sequences[0])
         generated_item_ids_list.extend(beam_items)
 
-        # Compute HR/NDCG
+        # 计算HR/NDCG
         hr10_list.append(hr_at_k(beam_items, [target_item_id], k=10))
         hr20_list.append(hr_at_k(beam_items, [target_item_id], k=20))
         ndcg10_list.append(ndcg_at_k(beam_items, [target_item_id], k=10))
         ndcg20_list.append(ndcg_at_k(beam_items, [target_item_id], k=20))
 
-        # Collision separation: check if scorer would reorder collision groups
-        # For this ablation, we simply count SID collision groups in the output
+        # 冲突分离：检查评分器是否会重排冲突组
+        # 对于此消融实验，我们简单地统计输出中的SID冲突组
         sid_counts = defaultdict(list)
         for sid in sequences[0]:
             if sid in sid_to_items:
@@ -214,7 +215,7 @@ def evaluate_variant(model, test_samples, sid_to_items, trie, beam_width,
 
 
 def print_ablation_table(vanilla_metrics, latent_metrics):
-    """Print formatted ablation comparison table."""
+    """打印格式化的消融比较表。"""
     print('\n' + '=' * 80)
     print('Latte Ablation: Vanilla vs Latent Token SID Generator')
     print('=' * 80)
@@ -236,7 +237,7 @@ def print_ablation_table(vanilla_metrics, latent_metrics):
         if isinstance(v_val, (int, float)) and isinstance(l_val, (int, float)):
             delta = l_val - v_val
             if key in ('avg_latency_ms', 'median_latency_ms'):
-                # For latency, negative delta is improvement (lower is better)
+                # 对于延迟，负的delta表示改进（越小越好）
                 delta_str = f'{delta:+.4f}'
             else:
                 delta_str = f'{delta:+.4f}'
@@ -300,12 +301,12 @@ def main():
         device = torch.device(args.device)
     logger.info(f'Using device: {device}')
 
-    # Load data
+    # 加载数据
     test_samples, item_to_sid, sid_to_items = load_test_data(
         args.test_path, args.index_path)
     trie = build_sid_trie(sid_to_items)
 
-    # Build and evaluate vanilla variant
+    # 构建并评估vanilla变体
     logger.info('Building vanilla model (no latent tokens)...')
     vanilla_model = build_model(
         'vanilla', args.sid_generator_ckpt, device,
@@ -322,7 +323,7 @@ def main():
         args.beam_width, args.num_samples, device,
     )
 
-    # Build and evaluate latent variant
+    # 构建并评估潜在Token变体
     logger.info(f'Building latent model ({args.latent_token_count} latent tokens)...')
     latent_model = build_model(
         'latent', args.sid_generator_ckpt, device,
@@ -339,10 +340,10 @@ def main():
         args.beam_width, args.num_samples, device,
     )
 
-    # Print comparison table
+    # 打印比较表
     print_ablation_table(vanilla_metrics, latent_metrics)
 
-    # Save results
+    # 保存结果
     results = {
         'config': {
             'num_sid_tokens': args.num_sid_tokens,

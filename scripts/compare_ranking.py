@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Compare ranking methods: beam likelihood vs item-level scorer (Task 3.5).
+比较排序方法：beam似然度 vs 物品级评分器（任务3.5）。
 
-Reports:
-    - HR/NDCG difference
-    - Collision item separation (can scorer distinguish items in same SID group?)
-    - Ranking gap metrics
+报告：
+    - HR/NDCG差异
+    - 冲突物品分离（评分器能否区分同一SID组中的物品？）
+    - 排名差距指标
 
-Usage:
+用法：
     python scripts/compare_ranking.py \\
         --test_path data/test.csv \\
         --index_path data/indices.json \\
@@ -29,6 +29,7 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
+# 将项目根目录添加到路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.eval_metrics import hr_at_k, ndcg_at_k
@@ -42,7 +43,7 @@ logger = logging.getLogger(__name__)
 
 
 def load_test_data(test_path, index_path, max_history_len=50):
-    """Load test sequences and return structured samples."""
+    """加载测试序列并返回结构化样本。"""
     import pandas as pd
     with open(index_path, "r") as f:
         index = json.load(f)
@@ -86,7 +87,7 @@ def beam_ranking(
     sid_to_items,
     beam_width=20,
 ):
-    """Rank candidates by beam likelihood alone."""
+    """仅根据beam似然度对候选项排序。"""
     B = 1
     H = len(history_sids)
     T = model.config.num_sid_tokens
@@ -95,12 +96,12 @@ def beam_ranking(
     if torch.cuda.is_available():
         hist_tensor = hist_tensor.cuda()
 
-    # Need to reshape: (1, H, T)
+    # 需要重塑：(1, H, T)
     hist = hist_tensor.reshape(B, H, T)
 
     sequences, scores = decoder.search(hist, model, num_return=beam_width)
 
-    # Ground SIDs to items
+    # 将SID映射到物品
     ranked_items = []
     for sid, score in zip(sequences[0], scores[0]):
         if sid in sid_to_items:
@@ -121,8 +122,8 @@ def scorer_ranking(
     decoder,
     beam_width=20,
 ):
-    """Rank candidates by item-level scorer."""
-    # First get beam candidates
+    """根据物品级评分器对候选项排序。"""
+    # 首先获取beam候选
     B = 1
     H = len(history_sids)
     T = model.config.num_sid_tokens
@@ -135,16 +136,16 @@ def scorer_ranking(
     sequences, beam_scores = decoder.search(hist, model, num_return=beam_width)
     device = hist.device
 
-    # Get user embedding
+    # 获取用户嵌入
     user_emb = model.token_embedding(hist.reshape(1, -1)).mean(dim=1)
 
-    # Score each candidate
+    # 对每个候选项评分
     scored_items = []
     for sid, bs in zip(sequences[0], beam_scores):
         if sid not in sid_to_items:
             continue
         for item_id in sid_to_items[sid]:
-            # Get item and sid embeddings
+            # 获取物品和SID嵌入
             sid_tensor = torch.tensor([sid], dtype=torch.long, device=device)
             sid_emb = model.token_embedding(sid_tensor).mean(dim=1).unsqueeze(0)
 
@@ -163,10 +164,10 @@ def scorer_ranking(
 
 
 def compute_ranking_gap(beam_items, scorer_items, target_item_id):
-    """Compute metrics comparing beam and scorer rankings."""
+    """计算比较beam和评分器排名的指标。"""
     result = {}
 
-    # Position of target item in each ranking
+    # 目标物品在每种排序中的位置
     beam_positions = [i for i, (item_id, _) in enumerate(beam_items) if item_id == target_item_id]
     scorer_positions = [i for i, (item_id, _) in enumerate(scorer_items) if item_id == target_item_id]
 
@@ -177,7 +178,7 @@ def compute_ranking_gap(beam_items, scorer_items, target_item_id):
         if beam_positions and scorer_positions else None
     )
 
-    # HR/NDCG (assume beam_width is the candidate pool size)
+    # HR/NDCG（假设beam_width是候选池大小）
     K = min(10, len(beam_items), len(scorer_items))
 
     beam_candidate_ids = [item_id for item_id, _ in beam_items[:K]]
@@ -192,7 +193,7 @@ def compute_ranking_gap(beam_items, scorer_items, target_item_id):
 
 
 def compute_collision_separation(beam_items, scorer_items, sid_to_items):
-    """Check if scorer can distinguish items sharing the same SID."""
+    """检查评分器能否区分共享同一SID的物品。"""
     beam_sids_used = defaultdict(list)
     for item_id, score in beam_items:
         for sid, items in sid_to_items.items():
@@ -207,7 +208,7 @@ def compute_collision_separation(beam_items, scorer_items, sid_to_items):
                 scorer_sids_used[sid].append((item_id, score))
                 break
 
-    # Count collisions where beam orders arbitrarily but scorer reorders
+    # 统计beam中任意排序但评分器重新排序的冲突数
     beam_arbitrary = 0
     scorer_different = 0
     for sid in beam_sids_used:
@@ -232,7 +233,7 @@ def parse_args():
     parser.add_argument("--scorer_ckpt", type=str, default=None)
     parser.add_argument("--beam_width", type=int, default=20)
     parser.add_argument("--num_samples", type=int, default=500,
-                        help="Number of test samples to evaluate")
+                        help="要评估的测试样本数量")
     parser.add_argument("--output", type=str, default="results/ranking_comparison.json")
     parser.add_argument("--device", type=str, default="auto")
     parser.add_argument("--seed", type=int, default=42)
@@ -251,27 +252,27 @@ def main():
         device = torch.device(args.device)
     logger.info(f"Using device: {device}")
 
-    # Load data
+    # 加载数据
     samples, item_to_sid, sid_to_items = load_test_data(args.test_path, args.index_path)
     if args.num_samples and args.num_samples < len(samples):
         samples = random.sample(samples, args.num_samples)
     logger.info(f"Evaluating on {len(samples)} samples")
 
-    # Build trie
+    # 构建Trie
     trie = build_sid_trie(dict(sid_to_items))
 
-    # Load SID generator
+    # 加载SID生成器
     ckpt = torch.load(args.sid_generator_ckpt, map_location="cpu")
     cfg = ckpt.get("config", SIDGeneratorConfig())
     model = SIDGenerator(cfg).to(device)
     model.load_state_dict(ckpt["model_state_dict"])
     model.eval()
 
-    # Setup decoder
+    # 设置解码器
     decoder_config = TrieBeamSearchConfig(beam_width=args.beam_width)
     decoder = TrieConstrainedBeamSearch(trie, decoder_config)
 
-    # Load scorer (optional; if not provided, only beam ranking)
+    # 加载评分器（可选；如果未提供，仅使用beam排序）
     scorer = None
     if args.scorer_ckpt:
         scorer_ckpt = torch.load(args.scorer_ckpt, map_location="cpu")
@@ -280,7 +281,7 @@ def main():
         scorer.load_state_dict(scorer_ckpt["model_state_dict"])
         scorer.eval()
 
-    # Evaluate
+    # 评估
     beam_hr_list = []
     scorer_hr_list = []
     beam_ndcg_list = []
@@ -294,10 +295,10 @@ def main():
         target_item_id = sample["target_item_id"]
         target_sid = sample["target_sid"]
 
-        # Beam ranking
+        # Beam排序
         beam_items = beam_ranking(history_sids, model, decoder, sid_to_items, args.beam_width)
 
-        # Generation metrics
+        # 生成指标
         gen_sids = [sid for sid, _ in zip(
             decoder.search(
                 torch.tensor([[[history_sids]]], dtype=torch.long).reshape(1, len(history_sids), model.config.num_sid_tokens).to(device) if torch.cuda.is_available() else torch.tensor([[[history_sids]]], dtype=torch.long).reshape(1, len(history_sids), model.config.num_sid_tokens),
@@ -311,12 +312,12 @@ def main():
         )
         gen_metrics_list.append(gen_metrics)
 
-        # Compute beam-only metrics
+        # 计算仅beam的指标
         beam_candidate_ids = [item_id for item_id, _ in beam_items[:10]]
         beam_hr_list.append(hr_at_k(beam_candidate_ids, [target_item_id]))
         beam_ndcg_list.append(ndcg_at_k(beam_candidate_ids, [target_item_id]))
 
-        # Scorer ranking
+        # 评分器排序
         if scorer is not None:
             scorer_items = scorer_ranking(
                 history_sids, target_sid, model, scorer, sid_to_items, item_to_sid, decoder, args.beam_width
@@ -326,13 +327,13 @@ def main():
             scorer_hr_list.append(hr_at_k(scorer_candidate_ids, [target_item_id]))
             scorer_ndcg_list.append(ndcg_at_k(scorer_candidate_ids, [target_item_id]))
 
-            # Position change
+            # 位置变化
             beam_pos = next((i for i, (iid, _) in enumerate(beam_items) if iid == target_item_id), -1)
             scorer_pos = next((i for i, (iid, _) in enumerate(scorer_items) if iid == target_item_id), -1)
             if beam_pos >= 0 and scorer_pos >= 0:
                 position_changes.append(beam_pos - scorer_pos)
 
-            # Collision separation
+            # 冲突分离
             coll_sep = compute_collision_separation(beam_items, scorer_items, sid_to_items)
             for k in coll_sep:
                 collision_sep_total[k] += coll_sep[k]
@@ -340,7 +341,7 @@ def main():
             scorer_hr_list.append(0.0)
             scorer_ndcg_list.append(0.0)
 
-    # Aggregate results
+    # 汇总结果
     results = {
         "num_samples": len(samples),
         "beam_width": args.beam_width,

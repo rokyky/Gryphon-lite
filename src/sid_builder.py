@@ -1,13 +1,13 @@
 """
-Semantic ID (SID) builders for item-to-token-sequence mapping.
+用于将物品映射到Token序列的Semantic ID（SID）构建器。
 
-Supports multiple construction strategies:
-    - RandomSIDBuilder: assign random token sequences as SIDs
-    - CategoryAwareSIDBuilder: prefix category ID + random suffix
-    - KMeansSIDBuilder: cluster text embeddings, use cluster IDs as SID tokens
-    - RQKMeansSIDBuilder: residual quantized KMeans for multi-level SIDs
+支持多种构建策略：
+    - RandomSIDBuilder：分配随机Token序列作为SID
+    - CategoryAwareSIDBuilder：前缀为类别ID + 随机后缀
+    - KMeansSIDBuilder：对文本嵌入进行聚类，使用聚类ID作为SID Token
+    - RQKMeansSIDBuilder：残差量化KMeans，用于多级SID
 
-All builders expose:
+所有构建器都提供：
     item_to_sid: dict[str or int, tuple[int, ...]]
     sid_to_items: dict[tuple[int, ...], list[str or int]]
 """
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 class BaseSIDBuilder(ABC):
-    """Abstract base class for all SID builders."""
+    """所有SID构建器的抽象基类。"""
 
     def __init__(
         self,
@@ -45,11 +45,11 @@ class BaseSIDBuilder(ABC):
 
     @abstractmethod
     def build(self, item_ids: List[Any], **kwargs) -> Tuple[Dict[Any, Tuple[int, ...]], Dict[Tuple[int, ...], List[Any]]]:
-        """Build SID mappings for the given item ids."""
+        """为给定的物品ID构建SID映射。"""
         ...
 
     def _finalize(self, item_ids: List[Any], sid_assignments: List[Tuple[int, ...]]):
-        """Populate item_to_sid and sid_to_items from parallel lists."""
+        """从并行列表中填充item_to_sid和sid_to_items。"""
         self.item_to_sid.clear()
         self.sid_to_items.clear()
         for item_id, sid in zip(item_ids, sid_assignments):
@@ -69,7 +69,7 @@ class BaseSIDBuilder(ABC):
 
 
 class RandomSIDBuilder(BaseSIDBuilder):
-    """Assign uniformly random token sequences as SIDs."""
+    """分配均匀随机Token序列作为SID。"""
 
     def build(
         self,
@@ -89,9 +89,9 @@ class RandomSIDBuilder(BaseSIDBuilder):
 
 
 class CategoryAwareSIDBuilder(BaseSIDBuilder):
-    """Prefix category ID + random suffix as SID.
+    """前缀为类别ID + 随机后缀作为SID。
 
-    Requires `categories` kwarg: a list of category labels parallel to item_ids.
+    需要`categories`关键字参数：与item_ids对应的类别标签列表。
     """
 
     def __init__(
@@ -113,7 +113,7 @@ class CategoryAwareSIDBuilder(BaseSIDBuilder):
         if categories is None:
             raise ValueError("CategoryAwareSIDBuilder requires `categories` kwarg.")
 
-        # Build category vocab if not provided
+        # 如果未提供类别词汇表，则构建一个
         if not self.category_vocab:
             unique_cats = sorted(set(c for c in categories if c is not None))
             self.category_vocab = {cat: i for i, cat in enumerate(unique_cats)}
@@ -138,11 +138,10 @@ class CategoryAwareSIDBuilder(BaseSIDBuilder):
 
 
 class KMeansSIDBuilder(BaseSIDBuilder):
-    """Cluster text embeddings via KMeans and use cluster IDs as SID tokens.
+    """通过KMeans对文本嵌入进行聚类，并使用聚类ID作为SID Token。
 
-    This produces flat clustering: each level of SID tokens comes from
-    a separate KMeans run on the same embeddings, so tokens at different
-    positions capture complementary cluster structure.
+    这产生扁平聚类：每个SID Token级别来自对相同嵌入的独立KMeans运行，
+    因此不同位置的Token捕获互补的聚类结构。
     """
 
     def __init__(
@@ -179,7 +178,7 @@ class KMeansSIDBuilder(BaseSIDBuilder):
         self.cluster_models = []
 
         for level in range(self.num_sid_tokens):
-            # Use a different random state per level for diversity
+            # 为每个级别使用不同的随机状态以增加多样性
             km = KMeans(
                 n_clusters=k,
                 max_iter=self.kmeans_iters,
@@ -195,13 +194,13 @@ class KMeansSIDBuilder(BaseSIDBuilder):
 
 
 class RQKMeansSIDBuilder(BaseSIDBuilder):
-    """Residual Quantized KMeans: multi-level SIDs via residual clustering.
+    """残差量化KMeans：通过残差聚类实现多级SID。
 
-    Level 0 clusters the raw embeddings.
-    Level 1 clusters the residual (embedding - level0 centroid).
-    Level 2 clusters the residual after level 0 + level 1, etc.
+    第0级对原始嵌入进行聚类。
+    第1级对残差（嵌入 - 第0级质心）进行聚类。
+    第2级对减去第0级和第1级后的残差进行聚类，以此类推。
 
-    This mirrors the ResidualVectorQuantizer in rq/models/rq.py.
+    这对应于rq/models/rq.py中的ResidualVectorQuantizer。
     """
 
     def __init__(
@@ -250,7 +249,7 @@ class RQKMeansSIDBuilder(BaseSIDBuilder):
             sid_assignments[:, level] = cluster_ids
             self.codebooks.append(centroids)
 
-            # Subtract chosen centroid from residual for next level
+            # 从残差中减去选定的质心，用于下一级
             residual = residual - centroids[cluster_ids]
 
         sid_list = [tuple(row) for row in sid_assignments]
@@ -264,7 +263,7 @@ def get_sid_builder(
     seed: Optional[int] = None,
     **kwargs,
 ) -> BaseSIDBuilder:
-    """Factory function: returns a SID builder by name."""
+    """工厂函数：根据名称返回SID构建器。"""
     builders = {
         "random": RandomSIDBuilder,
         "category": CategoryAwareSIDBuilder,

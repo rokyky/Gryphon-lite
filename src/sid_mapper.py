@@ -1,13 +1,12 @@
 """
-SID mapping utilities: export, load, lookup, and trie construction for
-constrained decoding.
+SID映射工具：导出、加载、查找以及用于约束解码的Trie构建。
 
-Supports:
-    - export_mappings: save item_to_sid and sid_to_items to JSON
-    - load_mappings: restore from JSON
-    - item_to_sid: O(1) lookup
-    - sid_to_items: O(1) reverse lookup (handles collisions)
-    - build_sid_trie: build prefix trie for constrained beam search
+支持：
+    - export_mappings: 将item_to_sid和sid_to_items保存为JSON
+    - load_mappings: 从JSON恢复
+    - item_to_sid: O(1)查找
+    - sid_to_items: O(1)反向查找（处理冲突）
+    - build_sid_trie: 为约束beam search构建前缀Trie
 """
 
 import json
@@ -24,12 +23,12 @@ def export_mappings(
     sid_to_items: Optional[Dict[Tuple[int, ...], List[Any]]] = None,
     output_path: str = "sid_mappings.json",
 ):
-    """Save item-to-SID and SID-to-item mappings to a JSON file.
+    """将item-to-SID和SID-to-item映射保存到JSON文件。
 
-    Keys and values are converted to strings/ints for JSON serialization.
-    SID tuples are stored as lists.
+    键和值会转换为字符串/整数以进行JSON序列化。
+    SID元组存储为列表。
 
-    If sid_to_items is not provided, it is reconstructed from item_to_sid.
+    如果未提供sid_to_items，则从item_to_sid重建。
     """
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
 
@@ -39,7 +38,7 @@ def export_mappings(
             sid_to_items[sid].append(item_id)
         sid_to_items = dict(sid_to_items)
 
-    # Convert to JSON-serializable structures
+    # 转换为JSON可序列化的结构
     item_to_sid_serial = {}
     for item_id, sid in item_to_sid.items():
         item_to_sid_serial[str(item_id)] = [int(t) for t in sid]
@@ -68,10 +67,10 @@ def export_mappings(
 
 
 def load_mappings(path: str) -> Tuple[Dict[Any, Tuple[int, ...]], Dict[Tuple[int, ...], List[Any]]]:
-    """Load item-to-SID and SID-to-item mappings from a JSON file.
+    """从JSON文件加载item-to-SID和SID-to-item映射。
 
-    Returns:
-        (item_to_sid, sid_to_items) dictionaries.
+    返回：
+        (item_to_sid, sid_to_items)字典。
     """
     with open(path, "r") as f:
         data = json.load(f)
@@ -85,7 +84,7 @@ def load_mappings(path: str) -> Tuple[Dict[Any, Tuple[int, ...]], Dict[Tuple[int
         sid = tuple(int(t) for t in sid_key.split("-"))
         sid_to_items[sid] = items
 
-    # If sid_to_items was not stored, reconstruct it
+    # 如果sid_to_items未存储，则重建它
     if not sid_to_items:
         sid_to_items = defaultdict(list)
         for item_id, sid in item_to_sid.items():
@@ -103,7 +102,7 @@ def item_to_sid_lookup(
     item_id: Any,
     item_to_sid: Dict[Any, Tuple[int, ...]],
 ) -> Optional[Tuple[int, ...]]:
-    """Lookup the SID for a given item ID."""
+    """查找给定物品ID对应的SID。"""
     return item_to_sid.get(item_id)
 
 
@@ -111,17 +110,17 @@ def sid_to_items_lookup(
     sid: Union[Tuple[int, ...], List[int]],
     sid_to_items: Dict[Tuple[int, ...], List[Any]],
 ) -> List[Any]:
-    """Reverse lookup: return all items that share this SID.
+    """反向查找：返回共享此SID的所有物品。
 
-    Handles collisions: multiple items may map to the same SID.
-    Returns an empty list if the SID is not found.
+    处理冲突：多个物品可能映射到同一个SID。
+    如果未找到SID，返回空列表。
     """
     key = tuple(sid)
     return sid_to_items.get(key, [])
 
 
 class SIDTrieNode:
-    """A node in the SID trie for constrained decoding."""
+    """用于约束解码的SID Trie节点。"""
 
     __slots__ = ("children", "is_terminal", "depth")
 
@@ -139,12 +138,11 @@ class SIDTrieNode:
 
 
 class SIDTrie:
-    """Prefix trie over SID token sequences.
+    """SID Token序列的前缀Trie。
 
-    Used for constrained decoding: at each generation step, only tokens
-    that lead to a valid complete SID are allowed.
+    用于约束解码：在每个生成步骤中，只允许那些能导向有效完整SID的Token。
 
-    Usage:
+    用法：
         trie = SIDTrie()
         trie.add((1, 42, 7))
         trie.add((1, 42, 8))
@@ -159,7 +157,7 @@ class SIDTrie:
         self._max_depth = 0
 
     def add(self, sid: Tuple[int, ...]) -> None:
-        """Insert a single SID tuple into the trie."""
+        """将单个SID元组插入Trie中。"""
         node = self.root
         for depth, token in enumerate(sid):
             if token not in node.children:
@@ -170,14 +168,14 @@ class SIDTrie:
         self._max_depth = max(self._max_depth, len(sid))
 
     def add_many(self, sids) -> None:
-        """Insert multiple SID tuples."""
+        """插入多个SID元组。"""
         for sid in sids:
             self.add(sid)
 
     def valid_next_tokens(self, prefix: Tuple[int, ...]) -> List[int]:
-        """Return all valid token ids that can follow the given prefix.
+        """返回所有可以跟在给定前缀后面的有效TokenID。
 
-        Returns an empty list if the prefix is invalid (not present in trie).
+        如果前缀无效（不在Trie中），返回空列表。
         """
         node = self._traverse(prefix)
         if node is None:
@@ -185,16 +183,16 @@ class SIDTrie:
         return list(node.children.keys())
 
     def is_valid_prefix(self, prefix: Tuple[int, ...]) -> bool:
-        """Check whether the given prefix exists in the trie."""
+        """检查给定的前缀是否存在于Trie中。"""
         return self._traverse(prefix) is not None
 
     def is_complete_sid(self, sid: Tuple[int, ...]) -> bool:
-        """Check whether the given SID is a complete (terminal) entry."""
+        """检查给定的SID是否是完整的（终端的）条目。"""
         node = self._traverse(sid)
         return node is not None and node.is_terminal
 
     def all_sids(self) -> List[Tuple[int, ...]]:
-        """Return all complete SID sequences stored in the trie."""
+        """返回存储在Trie中的所有完整SID序列。"""
         result: List[Tuple[int, ...]] = []
 
         def _dfs(node: SIDTrieNode, path: List[int]):
@@ -217,7 +215,7 @@ class SIDTrie:
         return self._max_depth
 
     def _traverse(self, prefix: Tuple[int, ...]) -> Optional[SIDTrieNode]:
-        """Follow the prefix and return the final node, or None."""
+        """沿着前缀遍历并返回最终节点，如果不存在则返回None。"""
         node = self.root
         for token in prefix:
             if token not in node.children:
@@ -230,13 +228,13 @@ class SIDTrie:
 
 
 class SIDMapper:
-    """Unified mapper class for item-to-SID and SID-to-item lookups.
+    """统一的映射器类，用于item-to-SID和SID-to-item查找。
 
-    Provides convenient lookup methods and wraps export/load functionality.
+    提供便捷的查找方法并封装了导出/加载功能。
 
     Args:
-        item_to_sid: mapping from item ID to SID tuple.
-        sid_to_items: reverse mapping from SID tuple to list of item IDs.
+        item_to_sid: 从物品ID到SID元组的映射。
+        sid_to_items: 从SID元组到物品ID列表的反向映射。
     """
 
     def __init__(
@@ -254,30 +252,30 @@ class SIDMapper:
             self.sid_to_items = sid_to_items
 
     def item_to_sid_lookup(self, item_id: Any) -> Optional[Tuple[int, ...]]:
-        """Lookup the SID for a given item ID."""
+        """查找给定物品ID对应的SID。"""
         return self.item_to_sid.get(item_id)
 
     def sid_to_items_lookup(self, sid: Union[Tuple[int, ...], List[int]]) -> List[Any]:
-        """Reverse lookup: return all items that share this SID.
+        """反向查找：返回共享此SID的所有物品。
 
-        Handles collisions: multiple items may map to the same SID.
-        Returns an empty list if the SID is not found.
+        处理冲突：多个物品可能映射到同一个SID。
+        如果未找到SID，返回空列表。
         """
         key = tuple(sid)
         return self.sid_to_items.get(key, [])
 
     def export(self, output_path: str = "sid_mappings.json"):
-        """Export mappings to JSON."""
+        """将映射导出到JSON。"""
         export_mappings(self.item_to_sid, self.sid_to_items, output_path)
 
     @classmethod
     def load(cls, path: str) -> "SIDMapper":
-        """Load mappings from JSON and return an SIDMapper instance."""
+        """从JSON加载映射并返回SIDMapper实例。"""
         item_to_sid, sid_to_items = load_mappings(path)
         return cls(item_to_sid, sid_to_items)
 
     def build_trie(self) -> SIDTrie:
-        """Build a SID trie from the current mappings."""
+        """从当前映射构建一个SID Trie。"""
         return build_sid_trie(self.sid_to_items)
 
     @property
@@ -298,7 +296,7 @@ class SIDMapper:
 def build_sid_trie(
     sid_to_items: Dict[Tuple[int, ...], List[Any]],
 ) -> SIDTrie:
-    """Build an SID trie from a sid_to_items mapping for constrained decoding."""
+    """从sid_to_items映射构建用于约束解码的SID Trie。"""
     trie = SIDTrie()
     for sid in sid_to_items:
         trie.add(sid)

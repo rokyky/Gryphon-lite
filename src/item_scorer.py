@@ -1,8 +1,8 @@
 """
-Item-level scorers for Gryphon-style candidate reranking (Tasks 3.2, 3.3).
+Gryphon风格的物品级评分器，用于候选重排序（任务3.2、3.3）。
 
-DotProductScorer: simple dot-product between user and item embeddings.
-MLPScorer: MLP over user, item, and SID embeddings with optional features.
+DotProductScorer：用户和物品嵌入之间的简单点积。
+MLPScorer：在用户、物品和SID嵌入上使用MLP，带有可选特征。
 """
 
 import logging
@@ -18,19 +18,19 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ItemScorerConfig:
-    """Configuration for item scorers.
+    """物品评分器的配置。
 
     Attributes:
-        scorer_type: "dotproduct" or "mlp".
-        user_dim: dimension of user embeddings.
-        item_dim: dimension of item embeddings.
-        sid_dim: dimension of SID embeddings (sum of token embeddings).
-        hidden_dims: hidden layer dimensions for MLP scorer.
-        dropout: dropout for MLP scorer.
-        activation: activation function (relu, gelu, tanh).
-        use_category_feature: whether to include category match feature.
-        use_popularity_feature: whether to include popularity feature.
-        use_recency_feature: whether to include recency feature.
+        scorer_type: "dotproduct"或"mlp"。
+        user_dim: 用户嵌入的维度。
+        item_dim: 物品嵌入的维度。
+        sid_dim: SID嵌入的维度（Token嵌入之和）。
+        hidden_dims: MLP评分器的隐藏层维度。
+        dropout: MLP评分器的Dropout。
+        activation: 激活函数（relu, gelu, tanh）。
+        use_category_feature: 是否包含类别匹配特征。
+        use_popularity_feature: 是否包含流行度特征。
+        use_recency_feature: 是否包含新近度特征。
     """
     scorer_type: str = "mlp"
     user_dim: int = 128
@@ -45,12 +45,12 @@ class ItemScorerConfig:
 
 
 class DotProductScorer(nn.Module):
-    """Simple dot-product scorer (Task 3.2).
+    """简单的点积评分器（任务3.2）。
 
     score = dot(user_emb, item_emb)
 
-    User embedding: mean pooling over history item embeddings.
-    Item embedding: from item metadata or learned lookup.
+    用户嵌入：历史物品嵌入的平均池化。
+    物品嵌入：来自物品元数据或学习查找表。
     """
 
     def __init__(
@@ -71,7 +71,7 @@ class DotProductScorer(nn.Module):
         else:
             self.item_embedding = None
 
-        # Projection if dimensions differ
+        # 如果维度不同则进行投影
         if user_dim != item_dim:
             self.user_proj = nn.Linear(user_dim, item_dim)
         else:
@@ -83,17 +83,17 @@ class DotProductScorer(nn.Module):
         item_embeddings: torch.Tensor,
         item_ids: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        """Compute dot-product scores.
+        """计算点积分数。
 
         Args:
-            user_embeddings: (batch, user_dim) or (batch, history_len, user_dim).
-            item_embeddings: (batch, num_candidates, item_dim) or None.
-            item_ids: optional (batch, num_candidates) for learned embeddings.
+            user_embeddings: (batch, user_dim) 或 (batch, history_len, user_dim)。
+            item_embeddings: (batch, num_candidates, item_dim) 或 None。
+            item_ids: 可选 (batch, num_candidates) 用于学习到的嵌入。
 
         Returns:
-            torch.Tensor: (batch, num_candidates) scores.
+            torch.Tensor: (batch, num_candidates) 分数。
         """
-        # Mean pool user history if needed
+        # 如果需要，对用户历史进行平均池化
         if user_embeddings.dim() == 3:
             user_emb = user_embeddings.mean(dim=1)  # (batch, user_dim)
         else:
@@ -101,7 +101,7 @@ class DotProductScorer(nn.Module):
 
         user_emb = self.user_proj(user_emb)  # (batch, item_dim)
 
-        # Get item embeddings
+        # 获取物品嵌入
         if item_embeddings is not None:
             item_emb = item_embeddings
         elif self.item_embedding is not None and item_ids is not None:
@@ -109,7 +109,7 @@ class DotProductScorer(nn.Module):
         else:
             raise ValueError("Either item_embeddings or learned item_embedding is required.")
 
-        # Dot product
+        # 点积
         scores = torch.bmm(
             item_emb, user_emb.unsqueeze(-1)
         ).squeeze(-1)  # (batch, num_candidates)
@@ -121,29 +121,29 @@ class DotProductScorer(nn.Module):
         self,
         history_item_embeddings: torch.Tensor,
     ) -> torch.Tensor:
-        """Compute user embedding as mean of history item embeddings."""
+        """将用户嵌入计算为历史物品嵌入的均值。"""
         if history_item_embeddings.dim() == 3:
             return history_item_embeddings.mean(dim=1)
         return history_item_embeddings
 
 
 class MLPScorer(nn.Module):
-    """MLP-based scorer (Task 3.3).
+    """基于MLP的评分器（任务3.3）。
 
     score = MLP([user_emb, item_emb, sid_emb, optional_features])
 
-    Architecture:
-        - Concatenate user, item, and SID embeddings
-        - Optionally add category match, popularity, recency features
-        - 2-3 layer MLP with ReLU/GELU
-        - Single output neuron (score)
+    架构：
+        - 拼接用户、物品和SID嵌入
+        - 可选地添加类别匹配、流行度、新近度特征
+        - 2-3层MLP，带ReLU/GELU
+        - 单个输出神经元（分数）
     """
 
     def __init__(self, config: ItemScorerConfig, num_items: int = 0):
         super().__init__()
         self.config = config
 
-        # Compute input dimension
+        # 计算输入维度
         feature_dims = config.user_dim + config.item_dim + config.sid_dim
         extra_features = 0
         if config.use_category_feature:
@@ -155,7 +155,7 @@ class MLPScorer(nn.Module):
         self.extra_features = extra_features
         input_dim = feature_dims + extra_features
 
-        # Build MLP layers
+        # 构建MLP层
         layers = []
         prev_dim = input_dim
         for hidden_dim in config.hidden_dims:
@@ -171,11 +171,11 @@ class MLPScorer(nn.Module):
                 layers.append(nn.ReLU())
             prev_dim = hidden_dim
 
-        # Output layer
+        # 输出层
         layers.append(nn.Linear(prev_dim, 1))
         self.mlp = nn.Sequential(*layers)
 
-        # Optional learned embeddings
+        # 可选的学习嵌入
         if num_items > 0:
             self.item_embedding = nn.Embedding(num_items, config.item_dim)
             nn.init.normal_(self.item_embedding.weight, mean=0.0, std=0.02)
@@ -199,27 +199,27 @@ class MLPScorer(nn.Module):
         item_ids: Optional[torch.Tensor] = None,
         extra_features: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        """Compute MLP scores.
+        """计算MLP分数。
 
         Args:
-            user_embeddings: (batch, user_dim) or (batch, history_len, user_dim).
-            item_embeddings: (batch, num_candidates, item_dim) or None.
-            sid_embeddings: (batch, num_candidates, sid_dim) or None.
-            item_ids: optional (batch, num_candidates) for learned embeddings.
-            extra_features: optional (batch, num_candidates, extra_feat_dim).
+            user_embeddings: (batch, user_dim) 或 (batch, history_len, user_dim)。
+            item_embeddings: (batch, num_candidates, item_dim) 或 None。
+            sid_embeddings: (batch, num_candidates, sid_dim) 或 None。
+            item_ids: 可选 (batch, num_candidates) 用于学习到的嵌入。
+            extra_features: 可选 (batch, num_candidates, extra_feat_dim)。
 
         Returns:
-            torch.Tensor: (batch, num_candidates) scores.
+            torch.Tensor: (batch, num_candidates) 分数。
         """
         B = user_embeddings.shape[0]
 
-        # Mean pool user history if needed
+        # 如果需要，对用户历史进行平均池化
         if user_embeddings.dim() == 3:
             user_emb = user_embeddings.mean(dim=1)  # (B, user_dim)
         else:
             user_emb = user_embeddings
 
-        # Determine num_candidates
+        # 确定num_candidates
         if item_embeddings is not None:
             num_candidates = item_embeddings.size(1)
         elif item_ids is not None:
@@ -227,20 +227,20 @@ class MLPScorer(nn.Module):
         else:
             num_candidates = 1
 
-        # Expand user embedding to match candidates
+        # 将用户嵌入扩展到匹配候选数
         user_emb_expanded = user_emb.unsqueeze(1).expand(B, num_candidates, -1)
 
-        # Get item embeddings
+        # 获取物品嵌入
         if item_embeddings is None and self.item_embedding is not None and item_ids is not None:
             item_embeddings = self.item_embedding(item_ids)
         elif item_embeddings is None:
             item_embeddings = torch.zeros(B, num_candidates, self.config.item_dim, device=user_emb.device)
 
-        # Default sid embeddings if missing
+        # 如果缺少SID嵌入，使用默认值
         if sid_embeddings is None:
             sid_embeddings = torch.zeros(B, num_candidates, self.config.sid_dim, device=user_emb.device)
 
-        # Concatenate features
+        # 拼接特征
         concat_list = [user_emb_expanded, item_embeddings, sid_embeddings]
 
         if extra_features is not None:
@@ -248,7 +248,7 @@ class MLPScorer(nn.Module):
 
         combined = torch.cat(concat_list, dim=-1)  # (B, num_candidates, input_dim)
 
-        # MLP forward
+        # MLP前向
         scores = self.mlp(combined).squeeze(-1)  # (B, num_candidates)
 
         return scores
@@ -258,7 +258,7 @@ def create_item_scorer(
     config: ItemScorerConfig,
     num_items: int = 0,
 ) -> nn.Module:
-    """Factory: create an item scorer by type."""
+    """工厂：按类型创建物品评分器。"""
     if config.scorer_type == "dotproduct":
         return DotProductScorer(
             user_dim=config.user_dim,

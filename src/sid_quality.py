@@ -1,17 +1,17 @@
 """
-SID quality metrics for evaluating Semantic ID assignments and generated SIDs.
+用于评估Semantic ID分配和生成SID质量的SID质量指标。
 
-Task 1.4 metrics (SID quality):
-    - collision_rate
-    - code_utilization
-    - category_purity
-    - collision_group_stats
+任务1.4指标（SID质量）：
+    - collision_rate（冲突率）
+    - code_utilization（代码利用率）
+    - category_purity（类别纯度）
+    - collision_group_stats（冲突组统计）
 
-Task 2.5 metrics (generation quality):
-    - valid_sid_rate
-    - valid_item_rate
-    - duplicate_rate
-    - beam_diversity
+任务2.5指标（生成质量）：
+    - valid_sid_rate（有效SID率）
+    - valid_item_rate（有效物品率）
+    - duplicate_rate（重复率）
+    - beam_diversity（Beam多样性）
 """
 
 import logging
@@ -25,16 +25,16 @@ from src.sid_mapper import SIDTrie
 logger = logging.getLogger(__name__)
 
 
-# ===== Task 1.4: SID assignment quality =====
+# ===== 任务1.4：SID分配质量 =====
 
 
 def collision_rate(
     item_to_sid: Dict[Any, Tuple[int, ...]],
     sid_to_items: Optional[Dict[Tuple[int, ...], List[Any]]] = None,
 ) -> float:
-    """Fraction of items that share their SID with at least one other item.
+    """与至少一个其他物品共享其SID的物品所占的比例。
 
-    Returns 0.0 if there are no items.
+    如果没有物品，返回0.0。
     """
     total = len(item_to_sid)
     if total == 0:
@@ -54,9 +54,9 @@ def code_utilization(
     sid_to_items: Dict[Tuple[int, ...], List[Any]],
     vocab_size_per_token: int = 256,
 ) -> Dict[str, float]:
-    """Fraction of possible codes that are actually used.
+    """实际使用的可能代码所占的比例。
 
-    Returns per-level utilization and full-path utilization.
+    返回每级利用率和完整路径利用率。
     """
     if not sid_to_items:
         return {}
@@ -77,9 +77,9 @@ def category_purity(
     sid_to_items: Dict[Tuple[int, ...], List[Any]],
     item_to_category: Dict[Any, str],
 ) -> float:
-    """For each SID, what fraction of items share the same majority category.
+    """对于每个SID，共享相同多数类别物品的比例。
 
-    Weighted average across all SIDs.
+    在所有SID上加权平均。
     """
     if not sid_to_items:
         return 0.0
@@ -106,15 +106,15 @@ def category_purity(
 def collision_group_stats(
     sid_to_items: Dict[Tuple[int, ...], List[Any]],
 ) -> Dict[str, Any]:
-    """Distribution of collision group sizes.
+    """冲突组大小的分布。
 
-    Returns:
+    返回：
         {
-            "num_groups": int,
-            "max_size": int,
-            "mean_size": float,
-            "median_size": float,
-            "size_distribution": {size: count, ...}
+            "num_groups": int,       （组数）
+            "max_size": int,         （最大组大小）
+            "mean_size": float,      （平均大小）
+            "median_size": float,    （中位数大小）
+            "size_distribution": {size: count, ...}  （大小分布）
         }
     """
     group_sizes = [len(items) for items in sid_to_items.values() if len(items) > 1]
@@ -140,14 +140,14 @@ def collision_group_stats(
     }
 
 
-# ===== Task 2.5: Generation quality metrics =====
+# ===== 任务2.5：生成质量指标 =====
 
 
 def valid_sid_rate(
     generated_sids: List[Tuple[int, ...]],
     trie: SIDTrie,
 ) -> float:
-    """Fraction of generated SIDs that exist in the catalog trie."""
+    """生成的SID中存在于目录Trie中的比例。"""
     if not generated_sids:
         return 0.0
 
@@ -159,7 +159,7 @@ def valid_item_rate(
     generated_sids: List[Tuple[int, ...]],
     sid_to_items: Dict[Tuple[int, ...], List[Any]],
 ) -> float:
-    """Fraction of generated SIDs that map to at least one real item."""
+    """生成的SID中映射到至少一个真实物品的比例。"""
     if not generated_sids:
         return 0.0
 
@@ -170,7 +170,7 @@ def valid_item_rate(
 def duplicate_rate(
     generated_item_ids: List[Any],
 ) -> float:
-    """Fraction of duplicate items in the generated list."""
+    """生成列表中重复物品的比例。"""
     if not generated_item_ids:
         return 0.0
 
@@ -181,7 +181,7 @@ def duplicate_rate(
 def beam_diversity(
     generated_item_ids: List[Any],
 ) -> float:
-    """Unique items divided by beam size."""
+    """唯一物品数除以Beam大小。"""
     if not generated_item_ids:
         return 0.0
 
@@ -195,16 +195,16 @@ def compute_generation_metrics(
     trie: SIDTrie,
     sid_to_items: Dict[Tuple[int, ...], List[Any]],
 ) -> Dict[str, float]:
-    """Compute all generation quality metrics at once.
+    """一次性计算所有生成质量指标。
 
     Args:
-        generated_sids: list of SID tuples from beam search.
-        generated_item_ids: grounded item IDs from the generated SIDs.
-        trie: SID trie built from the catalog.
-        sid_to_items: reverse mapping from SID to item IDs.
+        generated_sids: 来自beam search的SID元组列表。
+        generated_item_ids: 从生成的SID中grounding得到的物品ID。
+        trie: 从目录构建的SID Trie。
+        sid_to_items: 从SID到物品ID的反向映射。
 
     Returns:
-        Dictionary of metric name -> value.
+        指标名称到值的字典。
     """
     return {
         "valid_sid_rate": valid_sid_rate(generated_sids, trie),

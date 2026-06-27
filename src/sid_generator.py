@@ -1,11 +1,11 @@
 """
-SID generator: small Transformer decoder for generating SID token sequences.
+SID生成器：用于生成SID Token序列的小型Transformer解码器。
 
-Supports:
-    - Small Transformer decoder (Task 2.1)
-    - Seen-item filtering (Task 2.4)
-    - Duplicate filtering (Task 2.4)
-    - Latte-style latent tokens (Task 4.1, 4.2)
+支持：
+    - 小型Transformer解码器（任务2.1）
+    - 已见物品过滤（任务2.4）
+    - 重复过滤（任务2.4）
+    - Latte风格的潜在Token（任务4.1、4.2）
 """
 
 import logging
@@ -21,20 +21,20 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class SIDGeneratorConfig:
-    """Configuration for the SID generator model.
+    """SID生成器模型的配置。
 
     Attributes:
-        vocab_size_per_token: number of unique tokens per SID position.
-        num_sid_tokens: number of tokens in each SID sequence.
-        max_history_len: maximum number of history items to consider.
-        hidden_dim: hidden dimension of the Transformer.
-        num_layers: number of Transformer decoder layers.
-        num_heads: number of attention heads.
-        dropout: dropout probability.
-        max_seq_len: maximum total sequence length (history + SID tokens).
-        use_latent_tokens: enable Latte-style latent tokens (Task 4.1).
-        latent_token_count: number of latent tokens (default 0 = disabled).
-        latent_token_dim: dimension of latent tokens (default = hidden_dim).
+        vocab_size_per_token: 每个SID位置唯一的Token数量。
+        num_sid_tokens: 每个SID序列中的Token数量。
+        max_history_len: 考虑的最大历史物品数量。
+        hidden_dim: Transformer的隐藏维度。
+        num_layers: Transformer解码器层数。
+        num_heads: 注意力头数。
+        dropout: Dropout概率。
+        max_seq_len: 最大总序列长度（历史 + SID Token）。
+        use_latent_tokens: 启用Latte风格的潜在Token（任务4.1）。
+        latent_token_count: 潜在Token数量（默认0 = 禁用）。
+        latent_token_dim: 潜在Token的维度（默认 = hidden_dim）。
     """
     vocab_size_per_token: int = 256
     num_sid_tokens: int = 3
@@ -50,7 +50,7 @@ class SIDGeneratorConfig:
 
 
 class PositionalEncoding(nn.Module):
-    """Sinusoidal positional encoding."""
+    """正弦位置编码。"""
 
     def __init__(self, d_model: int, max_len: int = 512):
         super().__init__()
@@ -68,36 +68,36 @@ class PositionalEncoding(nn.Module):
 
 
 class SIDGenerator(nn.Module):
-    """Small Transformer decoder for SID token generation.
+    """用于SID Token生成的小型Transformer解码器。
 
-    Architecture:
-        - Token embedding layer (shared across all SID positions)
-        - Positional encoding
-        - N-layer Transformer decoder (causal masking)
-        - Output projection head per SID token position
+    架构：
+        - Token嵌入层（在所有SID位置共享）
+        - 位置编码
+        - N层Transformer解码器（因果掩码）
+        - 每个SID Token位置的输出投影头
 
-    With latent tokens (Latte-style, Task 4.1):
-        - Learnable latent tokens are prepended before SID generation
-        - Latent tokens attend to history (cross-attention not needed if
-          we simply concatenate them in the sequence with causal masking)
-        - SID tokens attend to latent tokens + history
+    使用潜在Token（Latte风格，任务4.1）：
+        - 可学习的潜在Token在SID生成之前预置
+        - 潜在Token关注历史（如果直接将它们放入具有因果掩码的序列中，
+          则无需交叉注意力）
+        - SID Token关注潜在Token + 历史
     """
 
     def __init__(self, config=None, vocab_per_token=256, num_sid_tokens=3,
                  hidden_dim=128, num_layers=3, num_heads=4, max_len=50,
                  use_latent_tokens=False, latent_token_count=0):
-        """Initialize SIDGenerator.
+        """初始化SIDGenerator。
 
-        Supports two calling conventions:
-            1) SIDGenerator(config=SIDGeneratorConfig(...))   -- dataclass config
-            2) SIDGenerator(num_sid_tokens=3, vocab_per_token=256, ...)  -- individual params
-            3) SIDGenerator(3, 256)  -- positional: (num_sid_tokens, vocab_per_token)
+        支持三种调用约定：
+            1) SIDGenerator(config=SIDGeneratorConfig(...))   -- dataclass配置
+            2) SIDGenerator(num_sid_tokens=3, vocab_per_token=256, ...)  -- 单独参数
+            3) SIDGenerator(3, 256)  -- 位置参数：(num_sid_tokens, vocab_per_token)
         """
         super().__init__()
         if isinstance(config, SIDGeneratorConfig):
             self.config = config
         elif isinstance(config, int) or config is None:
-            # Positional or keyword-based construction
+            # 位置参数或基于关键字的构造
             actual_num_sid = num_sid_tokens if config is None else config
             actual_vocab = vocab_per_token
             self.config = SIDGeneratorConfig(
@@ -116,15 +116,15 @@ class SIDGenerator(nn.Module):
             )
         self.hidden_dim = self.config.hidden_dim
 
-        # Token embedding (shared across all SID positions)
+        # Token嵌入（在所有SID位置共享）
         self.token_embedding = nn.Embedding(
             self.config.vocab_size_per_token, self.config.hidden_dim
         )
 
-        # Positional encoding
+        # 位置编码
         self.pos_encoder = PositionalEncoding(self.config.hidden_dim, self.config.max_seq_len)
 
-        # Learnable special tokens
+        # 可学习的特殊Token
         self.history_sep_token = nn.Parameter(
             torch.randn(1, 1, self.config.hidden_dim) * 0.02
         )
@@ -132,14 +132,14 @@ class SIDGenerator(nn.Module):
             torch.randn(1, 1, self.config.hidden_dim) * 0.02
         )
 
-        # Latent tokens (Task 4.1)
+        # 潜在Token（任务4.1）
         self.use_latent_tokens = self.config.use_latent_tokens
         if self.use_latent_tokens and self.config.latent_token_count > 0:
             latent_dim = self.config.latent_token_dim or self.config.hidden_dim
             self.latent_tokens = nn.Parameter(
                 torch.randn(1, self.config.latent_token_count, latent_dim) * 0.02
             )
-            # Project if dimensions don't match
+            # 如果维度不匹配则进行投影
             if latent_dim != self.config.hidden_dim:
                 self.latent_proj = nn.Linear(latent_dim, self.config.hidden_dim)
             else:
@@ -148,7 +148,7 @@ class SIDGenerator(nn.Module):
             self.latent_tokens = None
             self.latent_proj = None
 
-        # Transformer decoder
+        # Transformer解码器
         decoder_layer = nn.TransformerDecoderLayer(
             d_model=self.config.hidden_dim,
             nhead=self.config.num_heads,
@@ -159,7 +159,7 @@ class SIDGenerator(nn.Module):
         )
         self.decoder = nn.TransformerDecoder(decoder_layer, num_layers=self.config.num_layers)
 
-        # Output heads: one linear per SID token position
+        # 输出头：每个SID Token位置一个线性层
         self.output_heads = nn.ModuleList([
             nn.Linear(self.config.hidden_dim, self.config.vocab_size_per_token)
             for _ in range(self.config.num_sid_tokens)
@@ -168,7 +168,7 @@ class SIDGenerator(nn.Module):
         self._init_weights()
 
     def _init_weights(self):
-        """Initialize weights with small values."""
+        """用较小的值初始化权重。"""
         for p in self.parameters():
             if p.dim() > 1:
                 nn.init.normal_(p, mean=0.0, std=0.02)
@@ -179,67 +179,67 @@ class SIDGenerator(nn.Module):
         target_sids: Optional[torch.Tensor] = None,
         num_latent: Optional[int] = None,
     ) -> Dict[str, torch.Tensor]:
-        """Forward pass.
+        """前向传播。
 
         Args:
-            history_sids: (batch, history_len, num_sid_tokens) history item SIDs.
-            target_sids: optional (batch, target_len, num_sid_tokens) teacher-forcing targets.
-            num_latent: override latent_token_count for this forward pass.
+            history_sids: (batch, history_len, num_sid_tokens) 历史物品SID。
+            target_sids: 可选 (batch, target_len, num_sid_tokens) teacher-forcing目标。
+            num_latent: 为此次前向传播覆盖latent_token_count。
 
         Returns:
-            Dict with keys:
+            包含以下键的字典：
                 "logits": (batch, target_len, num_sid_tokens, vocab_size_per_token)
-                          per-position logits if target_sids is provided.
-                "latent_z": latent representations if latent tokens are used.
+                          如果提供了target_sids，则返回每个位置的logits。
+                "latent_z": 如果使用了潜在Token，则返回潜在表示。
         """
         B, H, T = history_sids.shape
         device = history_sids.device
 
-        # Flatten history SIDs: (B, H*T) token indices
+        # 展平历史SID：(B, H*T) Token索引
         history_flat = history_sids.reshape(B, H * T)
 
-        # Embed history tokens
+        # 嵌入历史Token
         history_emb = self.token_embedding(history_flat)  # (B, H*T, D)
 
-        # Build history segment with separator
+        # 构建带分隔符的历史段
         sep = self.history_sep_token.expand(B, 1, -1)
         memory = torch.cat([history_emb, sep], dim=1)  # (B, H*T + 1, D)
 
-        # Build target / query sequence
+        # 构建目标/查询序列
         if target_sids is not None:
             B2, L, T2 = target_sids.shape
             target_flat = target_sids.reshape(B2, L * T2)
             target_emb = self.token_embedding(target_flat)  # (B, L*T, D)
-            # Shift right for teacher forcing: prepend start token (zeros)
+            # 为teacher forcing右移：预置起始Token（零）
             start = torch.zeros(B2, 1, self.hidden_dim, device=device)
             tgt = torch.cat([start, target_emb[:, :-1, :]], dim=1)
         else:
-            # Autoregressive generation: start with zeros
+            # 自回归生成：从零开始
             tgt = torch.zeros(B, 1, self.hidden_dim, device=device)
 
-        # Handle latent tokens (Task 4.1/4.2)
+        # 处理潜在Token（任务4.1/4.2）
         latent_count = num_latent if num_latent is not None else self.config.latent_token_count
         latent_emb = None
         if self.use_latent_tokens and latent_count > 0 and self.latent_tokens is not None:
-            # Expand latent tokens to batch
+            # 将潜在Token扩展到batch大小
             latent_emb = self.latent_tokens.expand(B, -1, -1)
             latent_emb = self.latent_proj(latent_emb)
 
-            # Concatenate before the target sequence
+            # 在目标序列之前拼接
             tgt = torch.cat([latent_emb, tgt], dim=1)
 
-        # Apply positional encoding
+        # 应用位置编码
         tgt = self.pos_encoder(tgt)
         memory = self.pos_encoder(memory)
 
-        # Create causal mask for decoder self-attention
+        # 为解码器自注意力创建因果掩码
         tgt_len = tgt.size(1)
         causal_mask = torch.triu(
             torch.full((tgt_len, tgt_len), float("-inf"), device=device),
             diagonal=1,
         )
 
-        # Decoder forward
+        # 解码器前向
         output = self.decoder(
             tgt, memory,
             tgt_mask=causal_mask,
@@ -247,11 +247,11 @@ class SIDGenerator(nn.Module):
 
         result = {}
 
-        # Extract latent representations if used
+        # 如果使用了潜在Token，提取其表示
         if latent_emb is not None:
             result["latent_z"] = output[:, :latent_count, :]
 
-        # Compute per-position logits
+        # 计算每个位置的logits
         logits_list = []
         start_idx = latent_count if latent_emb is not None else 0
 
@@ -262,9 +262,9 @@ class SIDGenerator(nn.Module):
         logits = torch.cat(logits_list, dim=1)  # (B, num_sid_tokens, vocab)
 
         if target_sids is not None:
-            # Reshape to (B, L, num_sid_tokens, vocab) for multiple target positions
-            # Currently logits is (B, num_sid_tokens, vocab) for single-step prediction
-            # For multi-step teacher forcing, we need to handle it differently
+            # 重塑为(B, L, num_sid_tokens, vocab)用于多个目标位置
+            # 目前logits是(B, num_sid_tokens, vocab)，用于单步预测
+            # 对于多步teacher forcing，需要不同处理
             result["logits"] = logits.unsqueeze(1)  # (B, 1, num_sid_tokens, vocab)
         else:
             result["logits"] = logits.unsqueeze(1)
@@ -278,15 +278,15 @@ class SIDGenerator(nn.Module):
         step_input: Optional[torch.Tensor] = None,
         num_latent: Optional[int] = None,
     ) -> torch.Tensor:
-        """Generate the next SID probabilities given history and optional partial SID.
+        """给定历史和可选的部分SID，生成下一个SID的概率。
 
         Args:
-            history_sids: (batch, history_len, num_sid_tokens) history.
-            step_input: optional (batch, 1, num_sid_tokens) previously generated SID.
-            num_latent: override latent token count.
+            history_sids: (batch, history_len, num_sid_tokens) 历史。
+            step_input: 可选 (batch, 1, num_sid_tokens) 之前生成的SID。
+            num_latent: 覆盖潜在Token数量。
 
         Returns:
-            torch.Tensor: (batch, num_sid_tokens, vocab_size) logits.
+            torch.Tensor: (batch, num_sid_tokens, vocab_size) logits。
         """
         self.eval()
         out = self.forward(
@@ -303,14 +303,14 @@ class SIDGenerator(nn.Module):
         current_sid_prefix: Optional[List[int]] = None,
         num_latent: Optional[int] = None,
     ) -> torch.Tensor:
-        """Get logits for the next SID token position.
+        """获取下一个SID Token位置的logits。
 
         Args:
-            history_sids: (1, history_len, num_sid_tokens) single user history.
-            current_sid_prefix: partial SID tokens generated so far.
+            history_sids: (1, history_len, num_sid_tokens) 单个用户历史。
+            current_sid_prefix: 到目前为止已生成的部分SID Token。
 
         Returns:
-            torch.Tensor: (vocab_size,) logits for the next token.
+            torch.Tensor: (vocab_size,) 下一个Token的logits。
         """
         B = history_sids.shape[0]
 
@@ -332,21 +332,21 @@ class SIDGenerator(nn.Module):
         return logits[0, pos, :]  # (vocab_size,)
 
 
-# ===== Filtering utilities (Task 2.4) =====
+# ===== 过滤工具（任务2.4） =====
 
 
 def filter_seen_items(
     generated_sids: List[Tuple[int, ...]],
     user_history_sids: List[Tuple[int, ...]],
 ) -> List[Tuple[int, ...]]:
-    """Remove SIDs that the user has already interacted with.
+    """移除用户已经交互过的SID。
 
     Args:
-        generated_sids: list of generated SID tuples.
-        user_history_sids: list of SID tuples from user history.
+        generated_sids: 生成的SID元组列表。
+        user_history_sids: 用户历史中的SID元组列表。
 
     Returns:
-        Filtered list with seen SIDs removed (preserving order).
+        移除已见SID后的过滤列表（保持顺序）。
     """
     seen = set(user_history_sids)
     return [sid for sid in generated_sids if sid not in seen]
@@ -355,13 +355,13 @@ def filter_seen_items(
 def filter_duplicates(
     candidates: List[Tuple[Any, ...]],
 ) -> List[Tuple[Any, ...]]:
-    """Deduplicate candidate list while preserving order.
+    """对候选列表去重，同时保持顺序。
 
     Args:
-        candidates: list of (item_id, score) or just item_ids.
+        candidates: (item_id, score)元组列表或仅item_id列表。
 
     Returns:
-        Deduplicated list preserving order of first occurrence.
+        保持首次出现顺序的去重列表。
     """
     seen: Set[Any] = set()
     result: List[Tuple[Any, ...]] = []
