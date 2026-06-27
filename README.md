@@ -231,6 +231,56 @@ history → latent_z → sid_1 → sid_2 → ...
 - **多模态输入**：仅用文本 embedding，不做图片/音频/视频
 - **分布式训练**：仅单 GPU/CPU 训练
 
+## 算力估算与实验建议
+
+### 最低配置
+
+单卡 **RTX 4090（24GB）** 完全足够。KMeans / RQ-KMeans 有时更吃 CPU/RAM，GPU 不是唯一瓶颈。A100 主要是节省训练时间和调大 batch size，不是必须。
+
+### 资源估算
+
+| 版本 | 实验范围 | 4090 单卡 | A100 单卡 |
+|------|---------|----------|----------|
+| 最小闭环 | Beauty × Random SID + KMeans SID，小 SID generator，beam + scorer | 8–18 h | 6–14 h |
+| **可投递可信版** | Beauty + Sports × Random/Category/KMeans/RQ-KMeans SID，beam vs scorer，collision 分析 | **30–70 h** | **20–50 h** |
+| 完整实验 | 3 数据集 × 3 seeds，多 SID 长度、多 beam size、Latte ablation、latency sweep | 80–160 h | 55–120 h |
+
+### 最容易烧钱的地方
+
+```
+beam size sweep（5/10/20 够用，不用测 50+）
+SID length sweep（固定 3 tokens）
+RQ-KMeans 多配置（先跑 1 组）
+3 seeds 全 SID variant（只主结果补 seed）
+Latte 多配置（只做 1 组对比）
+```
+
+### 必须跑的实验
+
+```
+Random SID（底线）
+Category-aware SID
+KMeans SID
+RQ-KMeans SID
+SIDGen + beam likelihood ranking（基线）
+SIDGen + item-level scorer（主方法）
+valid SID rate / collision rate / beam diversity / latency
+long-tail vs head item 切片
+```
+
+### 可以砍的实验
+
+- 大量 beam size sweep → 固定 5/10/20
+- 大量 SID length sweep → 固定 3
+- Latte 多配置 → 只做 1 组 vanilla vs latent
+- 多 seed 全 SID variant → 主结果最好的 2 种 SID 补 3 seeds
+
+### 建议跑法
+
+1. **Beauty 小闭环**（8–18 h）：确认 SID 构建、generator 训练、scorer 训练全通
+2. **补 SID 消融 + Sports**（22–52 h）：4 种 SID 方案对比、scorer calibration、beam vs scorer 排序差距
+3. **Latte + 最终报告**（2–5 h）：一小消融即可，主成果是 scorer 校准
+
 ## 文件结构
 
 ```
